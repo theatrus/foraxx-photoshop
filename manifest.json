@@ -1,0 +1,30 @@
+{
+  "id": "us.theatr.foraxx",
+  "name": "Foraxx Palette",
+  "version": "0.1.0",
+  "main": "index.html",
+  "manifestVersion": 5,
+  "host": [
+    { "app": "PS", "minVersion": "24.4.0" }
+  ],
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "foraxxPanel",
+      "label": { "default": "Foraxx Palette" },
+      "minimumSize": { "width": 300, "height": 420 },
+      "maximumSize": { "width": 900, "height": 2000 },
+      "preferredDockedSize": { "width": 340, "height": 620 },
+      "preferredFloatingSize": { "width": 340, "height": 620 },
+      "icons": [
+        { "width": 23, "height": 23, "path": "icons/icon.png", "scale": [1, 2], "theme": ["darkest", "dark", "medium", "lightest", "light", "all"], "species": ["chrome"] }
+      ]
+    }
+  ],
+  "icons": [
+    { "width": 48, "height": 48, "path": "icons/icon@2x.png", "scale": [1], "theme": ["darkest", "dark", "medium", "lightest", "light", "all"], "species": ["pluginList"] }
+  ],
+  "requiredPermissions": {
+    "allowCodeGenerationFromStrings": false
+  }
+}

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="src/main.js"></script>
+  <style>
+    body { margin: 0; padding: 12px; font-family: sans-serif; color: #ddd; }
+    h2 { font-size: 14px; margin: 0 0 8px; }
+    .row { display: flex; gap: 8px; align-items: end; margin-bottom: 8px; }
+    .row > * { flex: 1; }
+    .row sp-textfield { flex: 0 0 72px; }
+    sp-picker { width: 100%; }
+    .hint { font-size: 11px; color: #999; margin: 4px 0 10px; }
+    #status { font-size: 12px; margin-top: 10px; min-height: 1.2em; }
+    .actions { display: flex; gap: 8px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Foraxx Palette</h2>
+  <p class="hint">Pick stretched, starless grayscale layers. The plugin builds a group of screened
+     layers that equals the Foraxx palette; the non-linear factors become two layer masks.</p>
+
+  <sp-checkbox id="threeChannels" checked>Three channels (SII + Ha + OIII)</sp-checkbox>
+  <sp-checkbox id="createStars">Also build a stars stack from star layers</sp-checkbox>
+
+  <div class="row"><sp-picker id="sii" label="SII"><sp-menu></sp-menu></sp-picker>
+    <sp-textfield id="siiGain" value="1.0" type="number"><sp-label slot="label">gain</sp-label></sp-textfield></div>
+  <div class="row"><sp-picker id="ha" label="Ha"><sp-menu></sp-menu></sp-picker>
+    <sp-textfield id="haGain" value="1.0" type="number"><sp-label slot="label">gain</sp-label></sp-textfield></div>
+  <div class="row"><sp-picker id="oiii" label="OIII"><sp-menu></sp-menu></sp-picker>
+    <sp-textfield id="oiiiGain" value="1.0" type="number"><sp-label slot="label">gain</sp-label></sp-textfield></div>
+
+  <div class="row"><sp-picker id="siiStars" label="SII stars"><sp-menu></sp-menu></sp-picker></div>
+  <div class="row"><sp-picker id="haStars" label="Ha stars"><sp-menu></sp-menu></sp-picker></div>
+  <div class="row"><sp-picker id="oiiiStars" label="OIII stars"><sp-menu></sp-menu></sp-picker></div>
+
+  <div class="row"><sp-textfield id="outputName" value="Foraxx"><sp-label slot="label">Group name</sp-label></sp-textfield></div>
+
+  <div class="actions">
+    <sp-button id="refresh" variant="secondary">Refresh layers</sp-button>
+    <sp-button id="run" variant="cta">Build Foraxx layers</sp-button>
+  </div>
+  <div id="status"></div>
+</body>
+</html>
