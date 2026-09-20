@@ -18,6 +18,41 @@
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
+const ORIGINAL = Object.freeze({ redBias: 0, redContrast: 1, greenBias: 0, greenContrast: 1, oiiiMidtone: 0.5 });
+
+function tuningOptions(options = {}) {
+  const bounded = (key, low, high) => Number.isFinite(options[key])
+    ? Math.max(low, Math.min(high, options[key])) : ORIGINAL[key];
+  return { redBias: bounded('redBias', -2, 2), redContrast: bounded('redContrast', 0.25, 4),
+    greenBias: bounded('greenBias', -2, 2), greenContrast: bounded('greenContrast', 0.25, 4),
+    oiiiMidtone: bounded('oiiiMidtone', 0.05, 0.95) };
+}
+
+/** Midtones transfer: m=0.5 is identity, lower values lift, endpoints stay fixed. */
+function midtones(img, midpoint = 0.5) {
+  const m = tuningOptions({ oiiiMidtone: midpoint }).oiiiMidtone;
+  if (m === 0.5) return img;
+  return Float32Array.from(img, x => {
+    x = clamp01(x);
+    return (1 - m) * x / (m + (1 - 2 * m) * x);
+  });
+}
+
+/** Bias shifts mask odds in stops; contrast steepens the log-odds transition. */
+function shapeMask(mask, bias = 0, contrast = 1) {
+  if (bias === 0 && contrast === 1) return mask;
+  return Float32Array.from(mask, x => x <= 0 ? 0 : x >= 1 ? 1 :
+    1 / (1 + Math.exp(-contrast * Math.log(x / (1 - x)) - bias * Math.LN2)));
+}
+
+/** The same source preparation is used by preview and full-resolution build. */
+function prepareSources(raw, gains = {}, tuning = {}) {
+  const t = tuningOptions(tuning);
+  return { sii: raw.sii ? scaled(raw.sii, gains.sii ?? 1) : null,
+    ha: scaled(raw.ha, gains.ha ?? 1),
+    oiii: midtones(scaled(raw.oiii, gains.oiii ?? 1), t.oiiiMidtone) };
+}
+
 /** Multiplies every sample by gain and clips at 1. Returns a new array. */
 function scaled(img, gain) {
   const out = new Float32Array(img.length);
@@ -64,19 +99,22 @@ function mix(factor, a, b) {
  * Returns [{ name, channel, layers: [{ name, image, mask? }] }, ...] where
  * layers are listed bottom to top.
  */
-function planStack(sources, colour, threeChannels) {
-  const ho = hoFactor(sources.ha, sources.oiii);
+function planStack(sources, colour, threeChannels, tuning = {}) {
+  const t = tuningOptions(tuning);
+  const maskName = (name, bias, contrast) => bias === 0 && contrast === 1 ? name : `${name}; bias ${bias}, contrast ${contrast}`;
+  const oxygenName = colour === sources && t.oiiiMidtone !== 0.5 ? `OIII [midtones ${t.oiiiMidtone}]` : "OIII";
+  const ho = shapeMask(hoFactor(sources.ha, sources.oiii), t.greenBias, t.greenContrast);
   const red = threeChannels
     ? { name: "Red", channel: 0, layers: [
         { name: "Ha", image: colour.ha },
-        { name: "SII", image: colour.sii, mask: oFactor(sources.oiii), maskName: "o = OIII^~OIII" },
+        { name: "SII", image: colour.sii, mask: shapeMask(oFactor(sources.oiii), t.redBias, t.redContrast), maskName: maskName("o = OIII^~OIII", t.redBias, t.redContrast) },
       ] }
     : { name: "Red", channel: 0, layers: [{ name: "Ha", image: colour.ha }] };
   const green = { name: "Green", channel: 1, layers: [
-    { name: "OIII", image: colour.oiii },
-    { name: "Ha", image: colour.ha, mask: ho, maskName: "ho = (Ha*OIII)^~(Ha*OIII)" },
+    { name: oxygenName, image: colour.oiii },
+    { name: "Ha", image: colour.ha, mask: ho, maskName: maskName("ho = (Ha*OIII)^~(Ha*OIII)", t.greenBias, t.greenContrast) },
   ] };
-  const blue = { name: "Blue", channel: 2, layers: [{ name: "OIII", image: colour.oiii }] };
+  const blue = { name: "Blue", channel: 2, layers: [{ name: oxygenName, image: colour.oiii }] };
   return [red, green, blue];
 }
 
@@ -100,9 +138,10 @@ function compositeStack(plan, n) {
 }
 
 /** The reference formula, computed directly. */
-function foraxx(sources, colour, threeChannels) {
-  const ho = hoFactor(sources.ha, sources.oiii);
-  const r = threeChannels ? mix(oFactor(sources.oiii), colour.sii, colour.ha) : Float32Array.from(colour.ha, clamp01);
+function foraxx(sources, colour, threeChannels, tuning = {}) {
+  const t = tuningOptions(tuning);
+  const ho = shapeMask(hoFactor(sources.ha, sources.oiii), t.greenBias, t.greenContrast);
+  const r = threeChannels ? mix(shapeMask(oFactor(sources.oiii), t.redBias, t.redContrast), colour.sii, colour.ha) : Float32Array.from(colour.ha, clamp01);
   const g = mix(ho, colour.ha, colour.oiii);
   const b = Float32Array.from(colour.oiii, clamp01);
   return { r, g, b };
@@ -152,4 +191,5 @@ function toGray(samples, components, hasAlpha) {
   return out;
 }
 
-module.exports = { clamp01, scaled, oFactor, hoFactor, mix, planStack, compositeStack, foraxx, tint, encode, decode, toGray };
+module.exports = { ORIGINAL, tuningOptions, midtones, shapeMask, prepareSources,
+  clamp01, scaled, oFactor, hoFactor, mix, planStack, compositeStack, foraxx, tint, encode, decode, toGray };

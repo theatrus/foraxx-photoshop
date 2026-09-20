@@ -4,9 +4,7 @@
   "version": "0.1.0",
   "main": "index.html",
   "manifestVersion": 5,
-  "host": [
-    { "app": "PS", "minVersion": "24.4.0" }
-  ],
+  "host": { "app": "PS", "minVersion": "24.4.0", "data": { "apiVersion": 2 } },
   "entrypoints": [
     {
       "type": "panel",
@@ -17,12 +15,12 @@
       "preferredDockedSize": { "width": 340, "height": 620 },
       "preferredFloatingSize": { "width": 340, "height": 620 },
       "icons": [
-        { "width": 23, "height": 23, "path": "icons/icon.png", "scale": [1, 2], "theme": ["darkest", "dark", "medium", "lightest", "light", "all"], "species": ["chrome"] }
+        { "width": 23, "height": 23, "path": "icons/icon.png", "scale": [1, 2], "theme": ["all"], "species": ["generic"] }
       ]
     }
   ],
   "icons": [
-    { "width": 48, "height": 48, "path": "icons/icon@2x.png", "scale": [1], "theme": ["darkest", "dark", "medium", "lightest", "light", "all"], "species": ["pluginList"] }
+    { "width": 23, "height": 23, "path": "icons/icon.png", "scale": [1, 2], "theme": ["all"], "species": ["generic"] }
   ],
   "requiredPermissions": {
     "allowCodeGenerationFromStrings": false

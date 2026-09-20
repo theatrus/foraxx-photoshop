@@ -2,17 +2,26 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <script src="src/main.js"></script>
   <style>
-    body { margin: 0; padding: 12px; font-family: sans-serif; color: #ddd; }
+    html { height: 100%; }
+    body { height: 100%; box-sizing: border-box; margin: 0; padding: 12px; font-family: sans-serif; color: #ddd; overflow-y: auto; }
     h2 { font-size: 14px; margin: 0 0 8px; }
-    .row { display: flex; gap: 8px; align-items: end; margin-bottom: 8px; }
+    .row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
     .row > * { flex: 1; }
+    .channel { min-width: 0; }
+    .channel sp-label { display: block; margin-bottom: 4px; }
     .row sp-textfield { flex: 0 0 72px; }
+    #outputName { flex: 1; }
     sp-picker { width: 100%; }
     .hint { font-size: 11px; color: #999; margin: 4px 0 10px; }
     #status { font-size: 12px; margin-top: 10px; min-height: 1.2em; }
     .actions { display: flex; gap: 8px; margin-top: 10px; }
+    .tuning { border-top: 1px solid #666; margin-top: 14px; padding-top: 10px; }
+    .tuning-row { display: flex; margin-bottom: 8px; }
+    .tuning-row > sp-slider { flex: 1; min-width: 0; margin-right: 8px; }
+    #previewImage { display: none; width: 100%; height: 160px; object-fit: contain; background-color: #222; }
+    #previewStatus { font-size: 11px; color: #aaa; margin: 6px 0; }
+    #preset { font-size: 12px; margin-bottom: 8px; }
   </style>
 </head>
 <body>
@@ -23,23 +32,50 @@
   <sp-checkbox id="threeChannels" checked>Three channels (SII + Ha + OIII)</sp-checkbox>
   <sp-checkbox id="createStars">Also build a stars stack from star layers</sp-checkbox>
 
-  <div class="row"><sp-picker id="sii" label="SII"><sp-menu></sp-menu></sp-picker>
+  <div class="row"><div class="channel"><sp-label>SII</sp-label><sp-picker id="sii"><sp-menu slot="options"></sp-menu></sp-picker></div>
     <sp-textfield id="siiGain" value="1.0" type="number"><sp-label slot="label">gain</sp-label></sp-textfield></div>
-  <div class="row"><sp-picker id="ha" label="Ha"><sp-menu></sp-menu></sp-picker>
+  <div class="row"><div class="channel"><sp-label>Ha</sp-label><sp-picker id="ha"><sp-menu slot="options"></sp-menu></sp-picker></div>
     <sp-textfield id="haGain" value="1.0" type="number"><sp-label slot="label">gain</sp-label></sp-textfield></div>
-  <div class="row"><sp-picker id="oiii" label="OIII"><sp-menu></sp-menu></sp-picker>
+  <div class="row"><div class="channel"><sp-label>OIII</sp-label><sp-picker id="oiii"><sp-menu slot="options"></sp-menu></sp-picker></div>
     <sp-textfield id="oiiiGain" value="1.0" type="number"><sp-label slot="label">gain</sp-label></sp-textfield></div>
 
-  <div class="row"><sp-picker id="siiStars" label="SII stars"><sp-menu></sp-menu></sp-picker></div>
-  <div class="row"><sp-picker id="haStars" label="Ha stars"><sp-menu></sp-menu></sp-picker></div>
-  <div class="row"><sp-picker id="oiiiStars" label="OIII stars"><sp-menu></sp-menu></sp-picker></div>
+  <div id="starsInputs">
+  <div class="row"><div class="channel"><sp-label>SII stars</sp-label><sp-picker id="siiStars"><sp-menu slot="options"></sp-menu></sp-picker></div></div>
+  <div class="row"><div class="channel"><sp-label>Ha stars</sp-label><sp-picker id="haStars"><sp-menu slot="options"></sp-menu></sp-picker></div></div>
+  <div class="row"><div class="channel"><sp-label>OIII stars</sp-label><sp-picker id="oiiiStars"><sp-menu slot="options"></sp-menu></sp-picker></div></div>
+  </div>
+
+  <div class="actions"><sp-button id="refresh" variant="secondary">Refresh layers</sp-button></div>
+
+  <div class="tuning">
+    <div id="preset">Original Foraxx</div>
+    <img id="previewImage" alt="Foraxx palette preview">
+    <div id="previewStatus">Select source layers, then load a preview.</div>
+    <div class="actions">
+      <sp-button id="preview" variant="secondary">Load preview</sp-button>
+      <sp-button id="reset" variant="secondary">Original Foraxx</sp-button>
+    </div>
+    <p class="hint">Preview updates as you adjust. It uses sampled sources; fine detail may differ.</p>
+    <div class="tuning-row">
+      <sp-slider id="redBias" min="-2" max="2" step="0.1" value="0"><sp-label slot="label">Red bias → SII</sp-label></sp-slider>
+      <sp-slider id="redContrast" min="0.25" max="4" step="0.05" value="1"><sp-label slot="label">Red contrast</sp-label></sp-slider>
+    </div>
+    <div class="tuning-row">
+      <sp-slider id="greenBias" min="-2" max="2" step="0.1" value="0"><sp-label slot="label">Green bias → Ha</sp-label></sp-slider>
+      <sp-slider id="greenContrast" min="0.25" max="4" step="0.05" value="1"><sp-label slot="label">Green contrast</sp-label></sp-slider>
+    </div>
+    <div class="tuning-row">
+      <sp-slider id="oiiiMidtone" min="0.05" max="0.95" step="0.01" value="0.5"><sp-label slot="label">OIII midtones · lower lifts</sp-label></sp-slider>
+    </div>
+    <p class="hint">Bias 0, contrast 1 and midtones 0.5 preserve the original palette. Changes apply to the next build.</p>
+  </div>
 
   <div class="row"><sp-textfield id="outputName" value="Foraxx"><sp-label slot="label">Group name</sp-label></sp-textfield></div>
 
   <div class="actions">
-    <sp-button id="refresh" variant="secondary">Refresh layers</sp-button>
     <sp-button id="run" variant="cta">Build Foraxx layers</sp-button>
   </div>
   <div id="status"></div>
+  <script src="src/main.js"></script>
 </body>
 </html>

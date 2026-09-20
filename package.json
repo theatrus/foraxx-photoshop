@@ -5,6 +5,6 @@
   "description": "Photoshop UXP plugin that builds a Foraxx palette as screened, editable layers",
   "scripts": {
     "test": "node --test",
-    "package": "scripts/package.sh"
+    "package": "node scripts/package.cjs"
   }
 }

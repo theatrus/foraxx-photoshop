@@ -78,3 +78,52 @@ test("toGray averages colour components and ignores alpha", () => {
   near(F.toGray(rgba, 4, true), Float32Array.from([0.4, 1]));
   near(F.toGray(Float32Array.from([0.3, 0.7]), 1, false), Float32Array.from([0.3, 0.7]));
 });
+
+test("midtone shaping fixes endpoints, is monotonic, and lifts without clipping", () => {
+  const ramp = Float32Array.from([0, 0.1, 0.25, 0.5, 0.75, 0.9, 1]);
+  assert.strictEqual(F.midtones(ramp, 0.5), ramp);
+  const lifted = F.midtones(ramp, 0.25), darkened = F.midtones(ramp, 0.75);
+  near(Float32Array.of(lifted[3]), Float32Array.of(0.75));
+  near(Float32Array.of(darkened[3]), Float32Array.of(0.25));
+  assert.equal(lifted[0], 0); assert.equal(lifted[6], 1);
+  for (let i = 1; i < ramp.length - 1; i++) {
+    assert.ok(lifted[i] > ramp[i] && lifted[i] < 1);
+    assert.ok(darkened[i] < ramp[i] && darkened[i] > 0);
+    assert.ok(lifted[i] > lifted[i - 1]);
+  }
+});
+
+test("mask bias shifts odds and contrast sharpens around the midpoint", () => {
+  const mask = Float32Array.from([0, 0.25, 0.5, 0.75, 1]);
+  assert.strictEqual(F.shapeMask(mask), mask);
+  near(F.shapeMask(mask, 1, 1), Float32Array.from([0, 0.4, 2 / 3, 6 / 7, 1]));
+  near(F.shapeMask(mask, 0, 2), Float32Array.from([0, 0.1, 0.5, 0.9, 1]));
+});
+
+test("Original settings reproduce the original arrays exactly", () => {
+  const raw = { sii, ha, oiii }, gains = { sii: 0.9, ha: 1.2, oiii: 0.8 };
+  const original = { sii: F.scaled(sii, gains.sii), ha: F.scaled(ha, gains.ha), oiii: F.scaled(oiii, gains.oiii) };
+  assert.deepEqual(F.prepareSources(raw, gains, F.ORIGINAL), original);
+  assert.deepEqual(F.planStack(original, original, true, F.ORIGINAL), F.planStack(original, original, true));
+});
+
+test("custom masks remain an exact editable mix, with raw stars and shaped source factors", () => {
+  const tuning = { redBias: 1.2, redContrast: 1.8, greenBias: -0.7, greenContrast: 0.6, oiiiMidtone: 0.3 };
+  const sources = F.prepareSources({ sii, ha, oiii }, {}, tuning);
+  const stars = { sii: siiStars, ha: haStars, oiii: oiiiStars };
+  for (const three of [false, true]) {
+    const got = F.compositeStack(F.planStack(sources, stars, three, tuning), N);
+    const want = F.foraxx(sources, stars, three, tuning);
+    near(got.r, want.r); near(got.g, want.g); near(got.b, oiiiStars);
+  }
+  // Independent scalar expression for a one-stop bias: m' = 2m / (1+m).
+  const p = F.planStack({ sii: Float32Array.of(0.9), ha: Float32Array.of(0.2), oiii: Float32Array.of(0.25) },
+    { sii: Float32Array.of(0.9), ha: Float32Array.of(0.2), oiii: Float32Array.of(0.25) }, true, { redBias: 1 });
+  const o = Math.pow(0.25, 0.75), expected = (2 * o / (1 + o)) * 0.9 + ((1 - o) / (1 + o)) * 0.2;
+  near(F.compositeStack(p, 1).r, Float32Array.of(expected));
+});
+
+test("invalid or extreme tuning is normalized to finite supported controls", () => {
+  assert.deepEqual(F.tuningOptions({ redBias: Infinity, redContrast: 0, greenBias: -100, greenContrast: NaN, oiiiMidtone: 1 }),
+    { redBias: 0, redContrast: 0.25, greenBias: -2, greenContrast: 1, oiiiMidtone: 0.95 });
+});
