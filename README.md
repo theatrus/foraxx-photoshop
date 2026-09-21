@@ -4,6 +4,8 @@ A Photoshop UXP plugin that builds a Foraxx palette image from stretched,
 starless narrowband layers as a stack of ordinary, mergeable layers. Instead
 of writing one flattened result, it creates layers whose blend modes and
 masks reproduce the palette exactly, so you can keep tweaking after the fact.
+The Foraxx palette is [The Coldest Nights](https://thecoldestnights.com/2020/06/pixinsight-dynamic-narrowband-combinations-with-pixelmath/)' dynamic narrowband
+combination.
 
 Status: tested locally on Windows in Photoshop 2026 (27.10.0) using synthetic
 8- and 16-bit RGB documents and a full-resolution, 96.8-megapixel narrowband
