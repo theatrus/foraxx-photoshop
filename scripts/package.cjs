@@ -17,7 +17,7 @@ const work = fs.mkdtempSync(path.join(dist, "package-"));
 const stage = path.join(work, "plugin"), output = path.join(work, "output");
 fs.mkdirSync(stage);
 fs.mkdirSync(output);
-for (const name of ["manifest.json", "index.html", "src", "icons"]) {
+for (const name of ["manifest.json", "index.html", "src", "icons", "LICENSE", "NOTICE"]) {
   fs.cpSync(path.join(root, name), path.join(stage, name), { recursive: true });
 }
 console.log(`Clean plugin folder: ${stage}`);

@@ -218,4 +218,9 @@ The PixInsight Foraxx Palette Utility that this follows was written by Paul
 Hancock (Paulyman Astro); its V8 port lives at
 <https://github.com/theatrus/foraxx-palette-utility>.
 
-Copyright (c) 2026 Yann Ramin.
+## License
+
+Apache License 2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright
+2026 Yann Ramin. The Foraxx palette is
+[The Coldest Nights](https://thecoldestnights.com/2020/06/pixinsight-dynamic-narrowband-combinations-with-pixelmath/)'
+work, and the PixInsight utility this follows is Paul Hancock's.

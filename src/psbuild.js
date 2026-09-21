@@ -1,4 +1,17 @@
 /*
+ * Foraxx Palette for Photoshop
+ * Copyright 2026 Yann Ramin
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0. See LICENSE
+ * and NOTICE in this distribution.
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Foraxx palette and its expressions are the work of The Coldest Nights:
+ * https://thecoldestnights.com/2020/06/pixinsight-dynamic-narrowband-combinations-with-pixelmath/
+ */
+/*
  * Photoshop side: reads the source layers, computes the Foraxx plan, and
  * builds the layer stack with the UXP imaging API and the Photoshop DOM.
  *
