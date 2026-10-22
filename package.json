@@ -6,5 +6,6 @@
   "scripts": {
     "test": "node --test",
     "package": "node scripts/package.cjs"
-  }
+  },
+  "license": "Apache-2.0"
 }

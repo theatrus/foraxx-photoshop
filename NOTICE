@@ -1,4 +1,16 @@
 Foraxx Palette for Photoshop
+Copyright 2026 Yann Ramin
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The Foraxx palette and its dynamic PixelMath expressions are the work of
+The Coldest Nights, "PixInsight: Dynamic narrowband combinations with
+PixelMath" (June 2020):
+https://thecoldestnights.com/2020/06/pixinsight-dynamic-narrowband-combinations-with-pixelmath/
+
+The layer construction follows the PixInsight Foraxx Palette Utility, written
+by Paul Hancock (Paulyman Astro), 2023-2024, and its V8 rewrite:
+https://github.com/theatrus/foraxx-palette-utility
 
 The FPU color-curve control points in src/colour.js are adapted from
 Foraxx Palette Utility, lib/ForaxxEngine.js:
@@ -10,5 +22,5 @@ Licensed under Apache License 2.0; see licenses/FPU-LICENSE.txt.
 The JavaScript color processing and Photoshop integration are modified
 implementations and are not the PixInsight native processes.
 
-The Foraxx palette expressions are the work of The Coldest Nights:
-https://thecoldestnights.com/2020/06/pixinsight-dynamic-narrowband-combinations-with-pixelmath/
+Adobe, Photoshop and UXP are trademarks of Adobe Inc. This plugin is
+independent and is not affiliated with or supported by Adobe.

@@ -6,6 +6,8 @@ of writing one flattened result, it creates layers whose blend modes and
 masks reproduce the palette exactly, so you can keep tweaking after the fact.
 Choose dynamic Foraxx or the static SHO, HOO, HSO and OHS mappings. Optional
 FPU color finishing creates a processed snapshot above that raw stack.
+The Foraxx palette is [The Coldest Nights](https://thecoldestnights.com/2020/06/pixinsight-dynamic-narrowband-combinations-with-pixelmath/)' dynamic narrowband
+combination.
 
 Status: tested locally on Windows in Photoshop 2026 (27.10.0) using synthetic
 8- and 16-bit RGB documents and a full-resolution, 96.8-megapixel narrowband
@@ -317,4 +319,9 @@ The PixInsight Foraxx Palette Utility that this follows was written by Paul
 Hancock (Paulyman Astro); its V8 port lives at
 <https://github.com/theatrus/foraxx-palette-utility>.
 
-Copyright (c) 2026 Yann Ramin.
+## License
+
+Apache License 2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE). Copyright
+2026 Yann Ramin. The Foraxx palette is
+[The Coldest Nights](https://thecoldestnights.com/2020/06/pixinsight-dynamic-narrowband-combinations-with-pixelmath/)'
+work, and the PixInsight utility this follows is Paul Hancock's.
