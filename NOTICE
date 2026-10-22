@@ -1,0 +1,14 @@
+Foraxx Palette for Photoshop
+
+The FPU color-curve control points in src/colour.js are adapted from
+Foraxx Palette Utility, lib/ForaxxEngine.js:
+Copyright (C) 2023-2024 Paul Hancock (Paulyman Astro), original script
+Copyright (C) 2026 Yann Ramin, V8 rewrite and palette tools
+https://github.com/theatrus/foraxx-palette-utility
+Licensed under Apache License 2.0; see licenses/FPU-LICENSE.txt.
+
+The JavaScript color processing and Photoshop integration are modified
+implementations and are not the PixInsight native processes.
+
+The Foraxx palette expressions are the work of The Coldest Nights:
+https://thecoldestnights.com/2020/06/pixinsight-dynamic-narrowband-combinations-with-pixelmath/

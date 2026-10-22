@@ -20,6 +20,8 @@
 
 const { app, core, imaging, constants } = require("photoshop");
 const F = require("./foraxx.js");
+const O = require("./options.js"), R = require("./render.js");
+const { getSpace } = require('./color-space.js');
 
 // Bound temporary JavaScript buffers even for drizzled, 100+ MP images.
 const TILE_PIXELS = 2 * 1024 * 1024;
@@ -115,13 +117,16 @@ async function writeChannelGroups(doc, parent, plan, label, bounds, existing) {
 /**
  * options: { sii, ha, oiii, siiStars, haStars, oiiiStars (Layer|null),
  *            threeChannels, createStars, gains: {sii, ha, oiii},
- *            tuning?: {redBias, redContrast, greenBias, greenContrast, oiiiMidtone}, name }
+ *            tuning?: {redBias, redContrast, greenBias, greenContrast, oiiiMidtone, maskBlur}, name }
  */
 function validateOptions(options) {
   const doc = app.activeDocument;
   if (!doc) throw new Error("Open a document first.");
   if (doc.mode !== constants.DocumentMode.RGB) throw new Error("The document must be in RGB mode.");
   if (docBits(doc) === 32) throw new Error("Use an 8- or 16-bit RGB document. Photoshop does not support Screen blending at 32 bits per channel.");
+  const settings=O.normalize(options);
+  if (!options.threeChannels && !['Foraxx','HOO'].includes(settings.palette)) throw new Error('Select three channels for this palette.');
+  if (O.finishing(settings)) getSpace(doc.colorProfileName || '');
 
   const need = [["Ha", options.ha], ["OIII", options.oiii]];
   if (options.threeChannels) need.unshift(["SII", options.sii]);
@@ -136,6 +141,8 @@ function validateOptions(options) {
 
 async function buildForaxx(options) {
   const doc = validateOptions(options);
+  options = { ...options, colorProfile: doc.colorProfileName || '' };
+  const settings=O.normalize(options);
 
   await core.executeAsModal(async (ctx) => {
     const history = await ctx.hostControl.suspendHistory({ documentID: doc.id, name: "Build Foraxx palette" });
@@ -144,27 +151,49 @@ async function buildForaxx(options) {
       const root = await newGroup(doc, null, options.name || "Foraxx", false);
       if (doc.layers[0].id !== root.id) await root.move(doc.layers[0], constants.ElementPlacement.PLACEBEFORE);
       const black = await newPixelLayer(doc, root, "Black");
-      let nebulaLayers, starsGroup, starsLayers;
-      const rows = Math.max(1, Math.floor(TILE_PIXELS / doc.width));
+      let nebulaLayers, starsGroup, starsLayers, finishedNebula, finishedStars, masksGroup;
+      const maskLayers={};
+      const halo = R.halo(options);
+      const rows = Math.max(1, Math.floor(TILE_PIXELS / doc.width) - 2 * halo);
       for (let top = 0; top < doc.height; top += rows) {
         if (ctx.isCancelled) throw new Error("Build cancelled.");
         const bounds = { left: 0, top, right: doc.width, bottom: Math.min(top + rows, doc.height) };
-        const sources = F.prepareSources({
-          sii: options.threeChannels ? await readGray(doc, options.sii, bounds) : null,
-          ha: await readGray(doc, options.ha, bounds),
-          oiii: await readGray(doc, options.oiii, bounds),
-        }, options.gains, options.tuning);
+        // Read neighboring rows for convolution; only write the central strip.
+        // This makes every interior strip identical to a full-image blur.
+        const expanded = { ...bounds, top: Math.max(0, top - halo), bottom: Math.min(doc.height, bounds.bottom + halo) };
+        const raw = {
+          sii: options.threeChannels ? await readGray(doc, options.sii, expanded) : null,
+          ha: await readGray(doc, options.ha, expanded),
+          oiii: await readGray(doc, options.oiii, expanded),
+        };
+        const stars=options.createStars ? {
+          sii: options.threeChannels ? await readGray(doc,options.siiStars,expanded) : null,
+          ha: await readGray(doc,options.haStars,expanded), oiii: await readGray(doc,options.oiiiStars,expanded),
+        } : null;
+        const rendered=R.render(raw,stars,options,doc.width,expanded.bottom-expanded.top);
+        const crop = values => values && values.subarray((top - expanded.top) * doc.width, (bounds.bottom - expanded.top) * doc.width);
+        const rgb=values=>R.interleave({r:crop(values.r),g:crop(values.g),b:crop(values.b)});
         await writePixels(doc, black, new Float32Array(doc.width * (bounds.bottom - top) * 3), bounds);
-        nebulaLayers = await writeChannelGroups(doc, root, F.planStack(sources, sources, options.threeChannels, options.tuning), "", bounds, nebulaLayers);
+        nebulaLayers = await writeChannelGroups(doc, root, R.cropPlan(rendered.plan,crop), "", bounds, nebulaLayers);
+        if (O.finishing(settings)) {
+          if (!finishedNebula) finishedNebula=await newPixelLayer(doc,root,'Processed nebula (snapshot · hide to edit raw stack)');
+          await writePixels(doc,finishedNebula,rgb(rendered.nebula),bounds);
+        }
 
         if (options.createStars) {
-          const stars = {
-            sii: options.threeChannels ? await readGray(doc, options.siiStars, bounds) : null,
-            ha: await readGray(doc, options.haStars, bounds),
-            oiii: await readGray(doc, options.oiiiStars, bounds),
-          };
           if (!starsGroup) starsGroup = await newGroup(doc, root, "Stars", true);
-          starsLayers = await writeChannelGroups(doc, starsGroup, F.planStack(sources, stars, options.threeChannels, options.tuning), " stars", bounds, starsLayers);
+          starsGroup.visible=settings.combineStars;
+          starsLayers = await writeChannelGroups(doc, starsGroup, R.cropPlan(rendered.starPlan,crop), " stars", bounds, starsLayers);
+          if (settings.applyAdjustments) {
+            if (!finishedStars) finishedStars=await newPixelLayer(doc,starsGroup,'Processed stars (snapshot)');
+            await writePixels(doc,finishedStars,rgb(rendered.stars),bounds);
+          }
+        }
+        for (const [name,values] of Object.entries(rendered.exports)) {
+          if (!masksGroup) { masksGroup=await newGroup(doc,root,'Reusable masks (hidden)',false); masksGroup.visible=false; }
+          if (!maskLayers[name]) maskLayers[name]=await newPixelLayer(doc,masksGroup,name);
+          const gray=crop(values);
+          await writePixels(doc,maskLayers[name],R.interleave({r:gray,g:gray,b:gray}),bounds);
         }
         ctx.reportProgress({ value: bounds.bottom / doc.height });
       }

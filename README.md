@@ -1,9 +1,11 @@
 # Foraxx Palette for Photoshop
 
-A Photoshop UXP plugin that builds a Foraxx palette image from stretched,
+A Photoshop UXP plugin that builds narrowband palette images from stretched,
 starless narrowband layers as a stack of ordinary, mergeable layers. Instead
 of writing one flattened result, it creates layers whose blend modes and
 masks reproduce the palette exactly, so you can keep tweaking after the fact.
+Choose dynamic Foraxx or the static SHO, HOO, HSO and OHS mappings. Optional
+FPU color finishing creates a processed snapshot above that raw stack.
 
 Status: tested locally on Windows in Photoshop 2026 (27.10.0) using synthetic
 8- and 16-bit RGB documents and a full-resolution, 96.8-megapixel narrowband
@@ -77,6 +79,21 @@ macOS and the declared minimum Photoshop 24.4 remain untested.
 4. Click **Build Foraxx layers**. The new group appears at the top. Hide the
    source layers or leave them.
 
+Choose **Foraxx**, **SHO**, **HOO**, **HSO**, or **OHS** in the Palette menu.
+Two-channel data supports Foraxx and HOO. If you create a stars stack, the
+**Screen stars onto the nebula** checkbox controls whether it starts visible;
+the separate Stars group is retained either way.
+
+Use the Preview menu to inspect the result, stars, mixing masks, channel-ratio
+masks, or the protected saturation mask. Zoom and pan read a smaller region
+of the original inputs, making small-scale effects easier to inspect. Turn
+off **Live preview** and use **Load preview** for manual updates. Zoomed
+previews process their cropped boundaries independently, so edge pixels can
+differ from a full-image build.
+
+Palette, channel mode, gains, shaping and finishing settings are remembered
+locally between panel sessions. Source layer selections are not saved.
+
 Gains multiply a starless channel before combination, clipped at 1, and
 shift the dynamic factors with it. Star layers are not scaled.
 
@@ -92,6 +109,65 @@ shift the dynamic factors with it. Star layers are not scaled.
   both the masks and color combination. Values below 0.5 lift midtones;
   values above 0.5 darken them. Black and white stay fixed. Star pixels
   remain unshaped, while their masks follow the shaped starless sources.
+- **Ha and SII midtones** provide the same transfer for those starless
+  channels. Midtones 0.5 is neutral. Stars remain unshaped.
+- **Mask blur** smooths copies of the shaped Ha and OIII before computing
+  the red and green mixing masks, following the PixInsight utility's order.
+  Bias and contrast then reshape those factors. The color layers retain
+  their original detail, and the stars stack uses the same smoothed masks.
+  The value is Gaussian sigma in full-image pixels: 0 disables it, 2 px is
+  a useful starting point, and the maximum is 25 px. Larger values reduce
+  color speckle but soften boundaries between colors. Original Foraxx resets
+  blur to 0 to preserve the previous output.
+
+### FPU color finishing and reusable masks
+
+Open **Show color finishing and masks** for the additional options:
+
+- **Keep reusable mixing masks** exports the shaped Foraxx factors as gray
+  pixel layers. They are the same factors used by the red and green stacks.
+- **Create channel-ratio masks** exports OIII/(Ha+OIII) and, with SII data,
+  SII/(Ha+SII). The ratio threshold fades faint mean signal to black. Zero
+  disables that fade; an epsilon keeps empty pixels finite.
+- **Reduce color noise** removes 1–4 finest chroma scales with a separable
+  B3-spline à trous residual in CIE Lab, retaining L*. Preview scales adjust
+  to its sampling resolution.
+- **FPU standard color adjustments** uses the FPU hue and saturation curve
+  control points with Akima interpolation, including the twice-applied
+  selective saturation boost and the separate stars hue curve.
+- **Protect background** applies just the standard hue curves below the
+  background L* threshold, gradually introducing saturation up to twice it.
+- **Protected saturation boost** uses a mask proportional to lightness above
+  the background threshold and one minus HSV saturation. Its mask is also
+  exported for reuse.
+- **L* lift** applies a curve through (0.5, 0.5 + lift), preserving Lab chroma
+  until out-of-gamut RGB values need clipping. Negative values darken.
+
+Finishing follows FPU's order: color-noise reduction, standard adjustments,
+protected saturation, then L* lift. It supports the standard **sRGB
+IEC61966-2.1**, **Adobe RGB (1998)**, **Display P3** (also named **image P3**
+in Adobe's profile list), and **ProPhoto RGB**
+document profiles, using their tone curves and D50 Lab transforms. Palette
+mixing and finishing stay in the document's RGB space: there is no intermediate
+sRGB conversion in the output. The panel thumbnail is converted to sRGB for
+display. Use the Photoshop canvas to judge colors beyond sRGB, subject to
+your display's gamut, rather than the small panel preview.
+Use 16 bits for wide-gamut editing. The original profile and source layers
+are preserved. Custom/untagged profiles remain supported with finishing off;
+finishing rejects them rather than guessing their primaries or tone curve.
+These are JavaScript adaptations of
+the FPU controls, not a guarantee of pixel-identical PI native processing or
+wavelet kernels. Hue/saturation curves operate in the selected RGB space, so
+the same settings need not produce the same appearance across profiles.
+The original Photoshop mask bias/contrast convention is retained.
+
+The processed nebula/stars are labeled **snapshot** pixel layers. Hide a
+snapshot to edit the underlying raw layer stack, or rebuild after changing
+inputs/settings. Changing those raw layers does not recompute a snapshot.
+Reusable gray masks live in a hidden **Reusable masks** group, so they do not
+change the composite. Select one to copy it into another layer mask.
+**Original Foraxx** restores the original palette, unity gains, neutral
+midtones, zero blur and no finishing or extra mask outputs.
 
 For a mask value `x`, bias `b` and contrast `c`, the shaped mask is
 `1 / (1 + exp(-c * log(x/(1-x)) - b * log(2)))`, with endpoints preserved.
@@ -105,6 +181,13 @@ sources, so fine detail can differ from the full-resolution build. Click
 combination of the selected inputs, without later adjustments added to an
 existing output group. Changes take effect in a new group on the next build;
 existing groups do not update automatically.
+
+The preview scales mask blur to its thumbnail size and skips it below 0.3
+preview pixels, as the PI utility does. At fit-to-image scale on large images,
+a small blur may have little visible effect in the preview. Full-resolution
+processing uses overlapping strips to avoid seams. The implementation uses a
+normalized separable Gaussian with four-sigma support and replicated canvas
+edges; pixel-identical convolution with PixInsight is not claimed.
 
 32-bit documents are rejected before any edits: Photoshop does not support
 the Screen blend mode at that depth. Make an 8- or 16-bit RGB copy first.
@@ -153,6 +236,9 @@ Open the plugin's debugger in UDT and run:
 ```js
 await require('./scripts/photoshop-smoke.js').runSuite()
 await require('./scripts/photoshop-smoke.js').checkPreview()
+await require('./scripts/photoshop-smoke.js').checkBlur()
+await require('./scripts/photoshop-smoke.js').checkOptions()
+await require('./scripts/photoshop-smoke.js').checkOptionPreview()
 ```
 
 This creates and closes small synthetic documents. It tests 8/16 bits,
@@ -168,6 +254,17 @@ custom mask and OIII settings at both depths, with and without stars.
 The five preview checks verify that thumbnail reads leave document history
 and layers unchanged, that history changes invalidate the cache, and that preview
 pixels agree with builds to within one 8-bit step on the small fixtures.
+Four additional blur checks cover 8/16 bits, two/three channels, stars, the
+25 px maximum, and a full-size strip boundary. The unit suite checks the
+Gaussian against independent 2D convolution and verifies mask ordering,
+sharp color data, preview scaling, and seamless overlapping strips.
+The options checks cover static palettes, separated stars, exported mask
+pixels, finishing at 8/16 bits, preview agreement, zoomed source reads, and
+chroma reduction across a strip boundary.
+`checkProfiles()` adds 8/16-bit builds, merge/undo, profile preservation and
+preview checks for all four supported RGB spaces. `checkProfileLab()` compares
+color-patch conversions with Photoshop's own Lab readings (within one 8-bit
+Lab step on the tested patches). Both are exported from the smoke-test module.
 
 On 27.10, the largest formula differences were 0.004607 at 8 bits and
 0.000045 at 16 bits (less than two storage steps). Merging the full output
@@ -205,6 +302,10 @@ src/foraxx.js      pure math: factors, mixes, tinting, encoding, a plan
                    builder and a simulated compositor used by the tests
 src/psbuild.js     reads layers, builds groups, layers and masks
 src/preview.js     caches source thumbnails and renders the palette preview
+src/options.js     palette and finishing defaults
+src/render.js      shared build/preview pipeline and exported masks
+src/colour.js      color curves, Lab finishing and chroma smoothing
+src/color-space.js document RGB / D50 Lab transforms for supported profiles
 test/              node:test suite
 ```
 

@@ -125,5 +125,5 @@ test("custom masks remain an exact editable mix, with raw stars and shaped sourc
 
 test("invalid or extreme tuning is normalized to finite supported controls", () => {
   assert.deepEqual(F.tuningOptions({ redBias: Infinity, redContrast: 0, greenBias: -100, greenContrast: NaN, oiiiMidtone: 1 }),
-    { redBias: 0, redContrast: 0.25, greenBias: -2, greenContrast: 1, oiiiMidtone: 0.95 });
+    { redBias: 0, redContrast: 0.25, greenBias: -2, greenContrast: 1, oiiiMidtone: 0.95, maskBlur: 0, haMidtone: 0.5, siiMidtone: 0.5 });
 });

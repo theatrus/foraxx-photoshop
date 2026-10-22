@@ -18,14 +18,65 @@
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-const ORIGINAL = Object.freeze({ redBias: 0, redContrast: 1, greenBias: 0, greenContrast: 1, oiiiMidtone: 0.5 });
+const ORIGINAL = Object.freeze({ redBias: 0, redContrast: 1, greenBias: 0, greenContrast: 1, oiiiMidtone: 0.5, maskBlur: 0, haMidtone: 0.5, siiMidtone: 0.5 });
 
 function tuningOptions(options = {}) {
   const bounded = (key, low, high) => Number.isFinite(options[key])
     ? Math.max(low, Math.min(high, options[key])) : ORIGINAL[key];
   return { redBias: bounded('redBias', -2, 2), redContrast: bounded('redContrast', 0.25, 4),
     greenBias: bounded('greenBias', -2, 2), greenContrast: bounded('greenContrast', 0.25, 4),
-    oiiiMidtone: bounded('oiiiMidtone', 0.05, 0.95) };
+    oiiiMidtone: bounded('oiiiMidtone', 0.05, 0.95), maskBlur: bounded('maskBlur', 0, 25),
+    haMidtone: bounded('haMidtone', 0.05, 0.95), siiMidtone: bounded('siiMidtone', 0.05, 0.95) };
+}
+
+// PI skips smoothing below 0.3 preview pixels. Use a finite, normalized
+// Gaussian (four sigma support), with replicated edges at the canvas boundary.
+function gaussianRadius(sigma) {
+  return Number.isFinite(sigma) && sigma >= 0.3 ? Math.ceil(4 * sigma) : 0;
+}
+
+function gaussianBlur(input, width, height, sigma) {
+  const radius = gaussianRadius(sigma);
+  if (!radius) return input;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || input.length !== width * height)
+    throw new Error("Mask blur requires matching image dimensions.");
+  const weights = new Float64Array(radius + 1);
+  let total = 1;
+  weights[0] = 1;
+  for (let k = 1; k <= radius; k++) {
+    weights[k] = Math.exp(-0.5 * (k / sigma) ** 2);
+    total += 2 * weights[k];
+  }
+  for (let k = 0; k <= radius; k++) weights[k] /= total;
+  const horizontal = new Float32Array(input.length), output = new Float32Array(input.length);
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    for (let x = 0; x < width; x++) {
+      let sum = weights[0] * input[row + x];
+      for (let k = 1; k <= radius; k++) sum += weights[k] *
+        (input[row + Math.max(0, x - k)] + input[row + Math.min(width - 1, x + k)]);
+      horizontal[row + x] = sum;
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    for (let x = 0; x < width; x++) {
+      let sum = weights[0] * horizontal[row + x];
+      for (let k = 1; k <= radius; k++) sum += weights[k] *
+        (horizontal[Math.max(0, y - k) * width + x] + horizontal[Math.min(height - 1, y + k) * width + x]);
+      output[row + x] = sum;
+    }
+  }
+  return output;
+}
+
+/** Blur shaped starless sources BEFORE factors and mask bias/contrast, as in PI. */
+function mixingMasks(sources, threeChannels, tuning = {}, width, height, scale = 1) {
+  const t = tuningOptions(tuning), sigma = t.maskBlur * scale;
+  const ha = gaussianBlur(sources.ha, width, height, sigma);
+  const oiii = gaussianBlur(sources.oiii, width, height, sigma);
+  return { o: threeChannels ? shapeMask(oFactor(oiii), t.redBias, t.redContrast) : null,
+    ho: shapeMask(hoFactor(ha, oiii), t.greenBias, t.greenContrast) };
 }
 
 /** Midtones transfer: m=0.5 is identity, lower values lift, endpoints stay fixed. */
@@ -48,8 +99,8 @@ function shapeMask(mask, bias = 0, contrast = 1) {
 /** The same source preparation is used by preview and full-resolution build. */
 function prepareSources(raw, gains = {}, tuning = {}) {
   const t = tuningOptions(tuning);
-  return { sii: raw.sii ? scaled(raw.sii, gains.sii ?? 1) : null,
-    ha: scaled(raw.ha, gains.ha ?? 1),
+  return { sii: raw.sii ? midtones(scaled(raw.sii, gains.sii ?? 1), t.siiMidtone) : null,
+    ha: midtones(scaled(raw.ha, gains.ha ?? 1), t.haMidtone),
     oiii: midtones(scaled(raw.oiii, gains.oiii ?? 1), t.oiiiMidtone) };
 }
 
@@ -99,15 +150,24 @@ function mix(factor, a, b) {
  * Returns [{ name, channel, layers: [{ name, image, mask? }] }, ...] where
  * layers are listed bottom to top.
  */
-function planStack(sources, colour, threeChannels, tuning = {}) {
+function planStack(sources, colour, threeChannels, tuning = {}, masks, palette = 'Foraxx') {
+  if (palette !== 'Foraxx') {
+    const mapping = require('./options.js').PALETTES[palette];
+    if (!mapping || (!threeChannels && mapping.includes('sii'))) throw new Error('This palette requires SII data.');
+    return ['Red', 'Green', 'Blue'].map((name, channel) => ({ name, channel,
+      layers: [{ name: mapping[channel].toUpperCase(), image: colour[mapping[channel]] }] }));
+  }
   const t = tuningOptions(tuning);
-  const maskName = (name, bias, contrast) => bias === 0 && contrast === 1 ? name : `${name}; bias ${bias}, contrast ${contrast}`;
+  masks = masks || mixingMasks(sources, threeChannels, tuning);
+  const maskName = (name, bias, contrast) => name +
+    (bias === 0 && contrast === 1 ? "" : `; bias ${bias}, contrast ${contrast}`) +
+    (t.maskBlur ? `; source blur sigma ${t.maskBlur} px` : "");
   const oxygenName = colour === sources && t.oiiiMidtone !== 0.5 ? `OIII [midtones ${t.oiiiMidtone}]` : "OIII";
-  const ho = shapeMask(hoFactor(sources.ha, sources.oiii), t.greenBias, t.greenContrast);
+  const ho = masks.ho;
   const red = threeChannels
     ? { name: "Red", channel: 0, layers: [
         { name: "Ha", image: colour.ha },
-        { name: "SII", image: colour.sii, mask: shapeMask(oFactor(sources.oiii), t.redBias, t.redContrast), maskName: maskName("o = OIII^~OIII", t.redBias, t.redContrast) },
+        { name: "SII", image: colour.sii, mask: masks.o, maskName: maskName("o = OIII^~OIII", t.redBias, t.redContrast) },
       ] }
     : { name: "Red", channel: 0, layers: [{ name: "Ha", image: colour.ha }] };
   const green = { name: "Green", channel: 1, layers: [
@@ -138,11 +198,10 @@ function compositeStack(plan, n) {
 }
 
 /** The reference formula, computed directly. */
-function foraxx(sources, colour, threeChannels, tuning = {}) {
-  const t = tuningOptions(tuning);
-  const ho = shapeMask(hoFactor(sources.ha, sources.oiii), t.greenBias, t.greenContrast);
-  const r = threeChannels ? mix(shapeMask(oFactor(sources.oiii), t.redBias, t.redContrast), colour.sii, colour.ha) : Float32Array.from(colour.ha, clamp01);
-  const g = mix(ho, colour.ha, colour.oiii);
+function foraxx(sources, colour, threeChannels, tuning = {}, masks) {
+  masks = masks || mixingMasks(sources, threeChannels, tuning);
+  const r = threeChannels ? mix(masks.o, colour.sii, colour.ha) : Float32Array.from(colour.ha, clamp01);
+  const g = mix(masks.ho, colour.ha, colour.oiii);
   const b = Float32Array.from(colour.oiii, clamp01);
   return { r, g, b };
 }
@@ -191,5 +250,5 @@ function toGray(samples, components, hasAlpha) {
   return out;
 }
 
-module.exports = { ORIGINAL, tuningOptions, midtones, shapeMask, prepareSources,
+module.exports = { ORIGINAL, tuningOptions, midtones, shapeMask, prepareSources, gaussianRadius, gaussianBlur, mixingMasks,
   clamp01, scaled, oFactor, hoFactor, mix, planStack, compositeStack, foraxx, tint, encode, decode, toGray };

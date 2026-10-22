@@ -5,11 +5,15 @@ const { app } = require("photoshop");
 const { buildForaxx } = require("./src/psbuild.js");
 const F = require("./src/foraxx.js");
 const P = require("./src/preview.js");
+const O = require("./src/options.js");
 
 const $ = (id) => document.getElementById(id);
 const pickers = ["sii", "ha", "oiii", "siiStars", "haStars", "oiiiStars"];
 let selectedDocumentId = null;
 const tuningIds = Object.keys(F.ORIGINAL);
+const extraIds = Object.keys(O.DEFAULTS);
+const viewIds=['previewZoom','previewX','previewY'];
+let initialized=false;
 let building = false, previewWanted = false, previewRunning = false;
 let previewCache = null, previewRevision = 0, previewTimer;
 
@@ -60,11 +64,25 @@ function updateEnabled() {
   const three = $("threeChannels").checked, stars = $("createStars").checked;
   $("starsInputs").style.display = stars ? "block" : "none";
   $("sii").disabled = !three; $("siiGain").disabled = !three;
+  $("siiMidtone").disabled = !three;
+  if (!three && !['Foraxx','HOO'].includes($("palette").value)) $("palette").selectedIndex=0;
+  const dynamic=$("palette").value === 'Foraxx';
+  $("combineStars").disabled=!stars;
   $("siiStars").disabled = !(three && stars);
   $("haStars").disabled = !stars; $("oiiiStars").disabled = !stars;
-  $("redBias").disabled = !three; $("redContrast").disabled = !three;
+  $("redBias").disabled = !(three && dynamic); $("redContrast").disabled = !(three && dynamic);
+  for (const id of ['greenBias','greenContrast','maskBlur','createFactorImages']) $(id).disabled=!dynamic;
+  $("ratioThreshold").disabled=!$("createRatioMasks").checked && !$("previewTarget").value?.startsWith('ratio_');
+  $("colourNoiseLayers").disabled=!$("colourNoiseReduction").checked;
+  $("protectBackground").disabled=!$("applyAdjustments").checked;
+  $("saturationAmount").disabled=!$("protectedSaturation").checked;
+  $("saturationBackground").disabled=!($("protectedSaturation").checked || ($("applyAdjustments").checked && $("protectBackground").checked));
+  const target=$("previewTarget").value;
+  if ((target === 'stars' && !stars) || (target?.startsWith('factor_') && !dynamic) ||
+    (['factor_o','ratio_SII'].includes(target) && !three) || (target === 'saturation_mask' && (!$("protectedSaturation").checked || Number($("saturationAmount").value) === 0))) $("previewTarget").selectedIndex=0;
   $("preview").disabled = previewRunning;
   $("run").disabled = previewRunning;
+  $("previewX").disabled=$("previewY").disabled=Number($("previewZoom").value) === 1;
 }
 
 function readOptions() {
@@ -80,20 +98,43 @@ function readOptions() {
   };
   const threeChannels = $("threeChannels").checked;
   return {
+    ...O.normalize(Object.fromEntries(extraIds.map(id=>[id,typeof O.DEFAULTS[id] === 'boolean' ? $(id).checked : id === 'palette' ? $(id).value : Number($(id).value)]))),
     sii: layerById($("sii").value), ha: layerById($("ha").value), oiii: layerById($("oiii").value),
     siiStars: layerById($("siiStars").value), haStars: layerById($("haStars").value), oiiiStars: layerById($("oiiiStars").value),
     threeChannels,
     createStars: $("createStars").checked,
     gains: { sii: threeChannels ? gain("siiGain") : 1, ha: gain("haGain"), oiii: gain("oiiiGain") },
     tuning: F.tuningOptions(Object.fromEntries(tuningIds.map(id => [id, Number($(id).value)]))),
+    previewTarget: $("previewTarget").value || 'result',
+    ...Object.fromEntries(viewIds.map(id=>[id,Number($(id).value)])),
     name: $("outputName").value.trim() || "Foraxx",
   };
 }
 
 function updatePreset() {
   const original = tuningIds.every(id => Number($(id).value) === F.ORIGINAL[id]) &&
-    ["siiGain", "haGain", "oiiiGain"].every(id => Number($(id).value) === 1);
-  $("preset").textContent = original ? "Original Foraxx" : "Custom Foraxx";
+    ["siiGain", "haGain", "oiiiGain"].every(id => Number($(id).value) === 1) &&
+    extraIds.every(id => (typeof O.DEFAULTS[id] === 'boolean' ? $(id).checked : typeof O.DEFAULTS[id] === 'number' ? Number($(id).value) : $(id).value) === O.DEFAULTS[id]);
+  $("preset").textContent = original ? "Original Foraxx" : `Custom ${$("palette").value || 'Foraxx'}`;
+}
+
+function saveSettings() {
+  if (!initialized) return;
+  const saved={};
+  for (const id of [...tuningIds,...extraIds,...viewIds,'threeChannels','createStars','livePreview','siiGain','haGain','oiiiGain','outputName'])
+    saved[id]=$(id).tagName.toLowerCase() === 'sp-checkbox' ? $(id).checked : $(id).value;
+  try { localStorage.setItem('foraxx.settings.v1',JSON.stringify(saved)); } catch(e) { console.warn('Could not save settings',e); }
+}
+function restoreSettings() {
+  try {
+    const saved=JSON.parse(localStorage.getItem('foraxx.settings.v1') || '{}');
+    for (const id of [...tuningIds,...extraIds,...viewIds,'threeChannels','createStars','livePreview','siiGain','haGain','oiiiGain','outputName']) {
+      if (!(id in saved)) continue;
+      if ($(id).tagName.toLowerCase() === 'sp-checkbox') $(id).checked=saved[id] === true;
+      else if (id === 'palette') $(id).selectedIndex=Math.max(0,Object.keys(O.PALETTES).indexOf(saved[id]));
+      else if (typeof saved[id] === 'string' || Number.isFinite(saved[id])) $(id).value=saved[id];
+    }
+  } catch(e) { console.warn('Could not restore settings',e); }
 }
 
 function clearPreview() {
@@ -107,9 +148,11 @@ function clearPreview() {
 
 function queuePreview() {
   updatePreset();
+  saveSettings();
   previewRevision++;
   clearTimeout(previewTimer);
-  if (previewWanted && !building) previewTimer = setTimeout(updatePreview, 120);
+  if (previewWanted && !building && $("livePreview").checked) previewTimer = setTimeout(updatePreview, 120);
+  else if (previewWanted && !$("livePreview").checked) $("previewStatus").textContent = "Settings changed · click Load preview to update.";
 }
 
 async function updatePreview() {
@@ -128,7 +171,7 @@ async function updatePreview() {
     if (P.previewKey(readOptions()) !== key) { queuePreview(); return; }
     $("previewImage").src = url;
     $("previewImage").style.display = "block";
-    $("previewStatus").textContent = `${cache.width} × ${cache.height} preview · refresh after source edits`;
+    $("previewStatus").textContent = `${cache.width} × ${cache.height} preview · ${Math.round(cache.scale*100)}% source scale · refresh after source edits`;
   } catch (e) {
     if (revision === previewRevision) {
       $("previewImage").style.display = "none";
@@ -137,13 +180,22 @@ async function updatePreview() {
   } finally {
     previewRunning = false;
     updateEnabled();
-    if (revision !== previewRevision && previewWanted && !building) previewTimer = setTimeout(updatePreview, 120);
+    if (revision !== previewRevision && previewWanted && !building && $("livePreview").checked) previewTimer = setTimeout(updatePreview, 120);
+    else if (revision !== previewRevision && previewWanted && !$("livePreview").checked) $("previewStatus").textContent = "Settings changed · click Load preview to update.";
   }
 }
 
 function resetOriginal() {
   for (const id of tuningIds) $(id).value = F.ORIGINAL[id];
   for (const id of ["siiGain", "haGain", "oiiiGain"]) $(id).value = "1";
+  for (const id of extraIds) {
+    if (typeof O.DEFAULTS[id] === 'boolean') $(id).checked=O.DEFAULTS[id];
+    else if (id === 'palette') $(id).selectedIndex=0;
+    else $(id).value=O.DEFAULTS[id];
+  }
+  $("previewTarget").selectedIndex=0;
+  $("previewZoom").value=1; $("previewX").value=$("previewY").value=50;
+  updateEnabled();
   queuePreview();
 }
 
@@ -170,15 +222,28 @@ async function run() {
 function initialize() {
   $("refresh").addEventListener("click", refreshLayers);
   $("run").addEventListener("click", run);
-  $("preview").addEventListener("click", () => { previewCache = null; previewWanted = true; queuePreview(); });
+  $("preview").addEventListener("click", () => { previewCache = null; previewWanted = true; previewRevision++; clearTimeout(previewTimer); updatePreview(); });
   $("reset").addEventListener("click", resetOriginal);
-  for (const id of ["threeChannels", "createStars", ...pickers]) {
+  $("extrasToggle").addEventListener('click',()=>{
+    const show=$("extras").style.display === 'none';
+    $("extras").style.display=show ? 'block':'none';
+    $("extrasToggle").textContent=show ? 'Hide color finishing and masks':'Show color finishing and masks';
+  });
+  for (const id of ["threeChannels", "createStars", "livePreview", "previewTarget", ...extraIds, ...pickers]) {
     $(id).addEventListener("change", () => { updateEnabled(); queuePreview(); });
   }
-  for (const id of [...tuningIds, "siiGain", "haGain", "oiiiGain"]) {
+  for (const id of [...tuningIds, ...extraIds.filter(id=>typeof O.DEFAULTS[id] === 'number'), "siiGain", "haGain", "oiiiGain"]) {
     $(id).addEventListener("input", queuePreview);
     $(id).addEventListener("change", queuePreview);
   }
+  for(const id of viewIds) {
+    $(id).addEventListener('input',()=>{updateEnabled();queuePreview();});
+    $(id).addEventListener('change',()=>{updateEnabled();queuePreview();});
+  }
+  $("outputName").addEventListener('change',saveSettings);
+  restoreSettings();
   refreshLayers();
+  updatePreset();
+  initialized=true;
 }
 initialize();

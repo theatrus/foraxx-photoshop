@@ -5,6 +5,7 @@
 // Creates a separate synthetic document; never edits an existing document.
 const { app, core, imaging, constants, action } = require("photoshop");
 const F = require("../src/foraxx.js");
+const R = require("../src/render.js");
 const { buildForaxx } = require("../src/psbuild.js");
 
 async function pixels(doc, layer) {
@@ -19,12 +20,12 @@ async function pixels(doc, layer) {
   } finally { got.imageData.dispose(); }
 }
 
-async function fixture(bits = 16, width = 32, height = 24) {
+async function fixture(bits = 16, width = 32, height = 24, profile = 'sRGB IEC61966-2.1') {
   return core.executeAsModal(async () => {
     const doc = await app.createDocument({
       name: `Foraxx smoke ${bits}-bit`, width, height,
       mode: constants.NewDocumentMode.RGB,
-      depth: bits, profile: "sRGB IEC61966-2.1",
+      depth: bits, profile,
     });
     const layers = {}, samples = {};
     for (const [name, fn] of Object.entries({
@@ -39,7 +40,7 @@ async function fixture(bits = 16, width = 32, height = 24) {
       const rgb = Float32Array.from({ length: gray.length * 3 }, (_, i) => gray[Math.floor(i / 3)]);
       const layer = await doc.createLayer({ name });
       const imageData = await imaging.createImageDataFromBuffer(F.encode(rgb, bits), {
-        width, height, components: 3, colorSpace: "RGB", colorProfile: "sRGB IEC61966-2.1",
+        width, height, components: 3, colorSpace: "RGB", colorProfile: profile,
       });
       try { await imaging.putPixels({ documentID: doc.id, layerID: layer.id, imageData }); }
       finally { imageData.dispose(); }
@@ -52,17 +53,11 @@ async function fixture(bits = 16, width = 32, height = 24) {
 }
 
 async function run({ bits = 16, threeChannels = true, createStars = false,
-  gains = { sii: 1, ha: 1, oiii: 1 }, tuning = {}, width = 32, height = 24 } = {}) {
-  const { doc, layers, samples } = await fixture(bits, width, height);
-  await buildForaxx({ ...layers, threeChannels, createStars, gains, tuning, name: "Foraxx test" });
-  const sources = F.prepareSources(samples, gains, tuning);
-  const expected = F.foraxx(sources, sources, threeChannels, tuning);
-  if (createStars) {
-    const stars = F.foraxx(sources, { sii: samples.siiStars, ha: samples.haStars, oiii: samples.oiiiStars }, threeChannels, tuning);
-    for (const c of ["r", "g", "b"]) {
-      for (let i = 0; i < expected[c].length; i++) expected[c][i] = 1 - (1 - expected[c][i]) * (1 - stars[c][i]);
-    }
-  }
+  gains = { sii: 1, ha: 1, oiii: 1 }, tuning = {}, width = 32, height = 24, ...extras } = {}) {
+  const { doc, layers, samples } = await fixture(bits, width, height, extras.colorProfile);
+  const options={ ...layers, threeChannels, createStars, gains, tuning, ...extras, colorProfile:doc.colorProfileName, name: "Foraxx test" };
+  await buildForaxx(options);
+  const expected = R.displayed(R.render(samples,{sii:samples.siiStars,ha:samples.haStars,oiii:samples.oiiiStars},options,width,height),options);
   const actual = await core.executeAsModal(() => pixels(doc), { commandName: "Read Foraxx test result" });
   let maxError = 0;
   for (let i = 0; i < expected.r.length; i++) {
@@ -70,7 +65,7 @@ async function run({ bits = 16, threeChannels = true, createStars = false,
   }
   const tree = (items) => Array.from(items, l => ({ name: l.name, kind: l.kind, blendMode: l.blendMode,
     ...(l.layers ? { layers: tree(l.layers) } : {}) }));
-  const report = { version: require("uxp").host.version, bits, width, height, threeChannels, createStars, gains, tuning, maxError,
+  const report = { version: require("uxp").host.version, bits, width, height, threeChannels, createStars, gains, tuning, ...extras, maxError,
     tolerance: bits === 8 ? 2 / 255 : 2 / 32768,
     tree: tree(doc.layers) };
   await core.executeAsModal(async () => {
@@ -159,7 +154,7 @@ async function checkPreview() {
     for (const settings of [
       { threeChannels: true, createStars: false, tuning: {} },
       ...[false, true].flatMap(threeChannels => [false, true].map(createStars => ({ threeChannels, createStars,
-        tuning: { redBias: 1.5, redContrast: 2, greenBias: -1, greenContrast: 0.5, oiiiMidtone: 0.25 } }))),
+        tuning: { redBias: 1.5, redContrast: 2, greenBias: -1, greenContrast: 0.5, oiiiMidtone: 0.25, maskBlur: 2 } }))),
     ]) {
       const options = { ...layers, ...settings, gains: { sii: 1, ha: 1, oiii: 1 } };
       const history = doc.activeHistoryState.id, layerCount = doc.layers.length;
@@ -183,4 +178,125 @@ async function checkPreview() {
   }
 }
 
-module.exports = { fixture, run, runSuite, checkRejectedBuild, checkPreview };
+async function checkBlur() {
+  const results = [];
+  for (const settings of [
+    { bits: 8, threeChannels: true, createStars: true, tuning: { maskBlur: 2 } },
+    { bits: 16, threeChannels: false, createStars: true, tuning: { maskBlur: 2, greenBias: -0.5 } },
+    { bits: 16, tuning: { maskBlur: 25, oiiiMidtone: 0.3 } },
+    { bits: 16, width: 2053, height: 1031, createStars: true, tuning: { maskBlur: 2 } },
+  ]) {
+    const { tree, ...result } = await run(settings);
+    results.push(result);
+    const doc = app.activeDocument;
+    await core.executeAsModal(() => doc.closeWithoutSaving(), { commandName: 'Close blur test document' });
+  }
+  return { pass: results.every(r => r.pass), results };
+}
+
+async function checkOptions() {
+  const results=[];
+  const settings=[...['SHO','HOO','HSO','OHS'].map(palette=>({palette,createStars:true,createRatioMasks:true})),
+    {palette:'HOO',threeChannels:false,createStars:true,combineStars:false,tuning:{haMidtone:0.3,oiiiMidtone:0.6}},
+    {bits:8,applyAdjustments:true,protectedSaturation:true,createStars:true,createFactorImages:true},
+    {applyAdjustments:true,protectBackground:true,protectedSaturation:true,lightnessLift:0.1,colourNoiseReduction:true,
+      createFactorImages:true,createRatioMasks:true,createStars:true,tuning:{maskBlur:2,haMidtone:0.4,siiMidtone:0.6}},
+    {colourNoiseReduction:true,colourNoiseLayers:4,width:2053,height:1031,tuning:{maskBlur:2}}];
+  for(const options of settings) {
+    const {tree,...result}=await run(options);results.push(result);
+    const doc=app.activeDocument;
+    await core.executeAsModal(()=>doc.closeWithoutSaving(),{commandName:'Close options test'});
+  }
+  return {pass:results.every(r=>r.pass),results};
+}
+
+async function checkOptionPreview() {
+  const P=require('../src/preview.js'),{doc,layers,samples}=await fixture(16,96,64),results=[];
+  try {
+    for(const extras of [{palette:'SHO',combineStars:false},{palette:'OHS',combineStars:true},
+      {applyAdjustments:true,colourNoiseReduction:true,protectedSaturation:true,lightnessLift:0.1,createFactorImages:true,createRatioMasks:true,tuning:{maskBlur:2}}]) {
+      const options={...layers,threeChannels:true,createStars:true,...extras};
+      const history=doc.activeHistoryState.id,cache=await P.loadPreview(options),expected=P.previewPixels(cache,options);
+      const readOnly=doc.activeHistoryState.id === history;
+      await buildForaxx(options);
+      const actual=await core.executeAsModal(()=>pixels(doc),{commandName:'Check finishing preview'});
+      let maxError8=0;
+      for(let i=0;i<doc.width*doc.height;i++)for(let c=0;c<3;c++)maxError8=Math.max(maxError8,Math.abs(expected[i*3+c]-Math.round(actual.data[i*actual.components+c]*255)));
+      const root=doc.layers[0],maskGroup=Array.from(root.layers).find(l=>l.name === 'Reusable masks (hidden)');
+      let masksValid=true;
+      if(maskGroup) {
+        masksValid=!maskGroup.visible;
+        const rendered=R.render(cache.raw,cache.stars,options,cache.width,cache.height);
+        for(const [name,gray] of Object.entries(rendered.exports)) {
+          const layer=Array.from(maskGroup.layers).find(l=>l.name === name);
+          if(!layer) {masksValid=false;continue;}
+          const got=await core.executeAsModal(()=>pixels(doc,layer),{commandName:'Check reusable mask'});
+          for(let i=0;i<gray.length;i++)if(Math.abs(got.data[i*got.components]-gray[i])>1/32768)masksValid=false;
+        }
+      }
+      results.push({extras,readOnly,maxError8,masksValid,pass:readOnly&&maxError8<=1&&masksValid});
+    }
+    const options={...layers,threeChannels:true,previewZoom:2,previewX:100,previewY:0};
+    const zoom=await P.loadPreview(options);
+    const cropCorrect=zoom.width===48&&zoom.height===32&&zoom.region.left===48&&zoom.region.top===0&&
+      zoom.raw.ha.every((v,i)=>v===samples.ha[Math.floor(i/48)*96+48+i%48]);
+    results.push({test:'zoom reads the selected source region',pass:cropCorrect});
+    return {pass:results.every(r=>r.pass),results};
+  } finally {await core.executeAsModal(()=>doc.closeWithoutSaving(),{commandName:'Close option preview test'});}
+}
+
+module.exports = { fixture, run, runSuite, checkRejectedBuild, checkPreview, checkBlur, checkOptions, checkOptionPreview };
+
+// Independent reference: Photoshop performs the RGB-to-Lab conversion.
+async function checkProfileLab() {
+ const S=require('../src/color-space.js');
+ return core.executeAsModal(async()=>{
+  const results=[];
+  const patches=[[0,0,0],[1,1,1],[0.5,0.5,0.5],[0.03,0.03,0.03],[0.25,0.5,0.4],[0.7,0.2,0.4],[0.1,0.2,0.7]];
+  for(const profile of ['sRGB IEC61966-2.1','Adobe RGB (1998)','image P3','ProPhoto RGB']){
+   const doc=await app.createDocument({name:'Lab profile reference',width:patches.length,height:1,mode:constants.NewDocumentMode.RGB,depth:16,profile});
+   try{
+    const layer=await doc.createLayer({name:'Color patches'}),values=Uint16Array.from(patches.flat(),v=>Math.round(v*32768));
+    const img=await imaging.createImageDataFromBuffer(values,{width:patches.length,height:1,components:3,colorSpace:'RGB',colorProfile:profile});
+    try{await imaging.putPixels({documentID:doc.id,layerID:layer.id,imageData:img});}finally{img.dispose();}
+    const got=await imaging.getPixels({documentID:doc.id,layerID:layer.id,colorSpace:'Lab',colorProfile:'Lab D50',componentSize:8,applyAlpha:true});
+    try{
+     const data=await got.imageData.getData(),space=S.getSpace(profile),errors=[];
+     for(let i=0;i<patches.length;i++){
+      const expected=space.toLab(...Array.from(values.subarray(i*3,i*3+3),v=>v/32768));
+      const actual=[data[i*3]/255,data[i*3+1]-128,data[i*3+2]-128];
+      errors.push(Math.max(Math.abs(expected[0]-actual[0])*100,Math.abs(expected[1]-actual[1]),Math.abs(expected[2]-actual[2])));
+     }
+     results.push({profile,maxLabError:Math.max(...errors),pass:Math.max(...errors)<1});
+    }finally{got.imageData.dispose();}
+   }finally{await doc.closeWithoutSaving();}
+  }
+  return results;
+ },{commandName:'Verify profile conversions against Photoshop Lab'});
+}
+
+async function checkProfiles() {
+  const P=require("../src/preview.js"), results=[];
+  for (const colorProfile of ["sRGB IEC61966-2.1","Adobe RGB (1998)","image P3","ProPhoto RGB"]) {
+    for (const bits of [8,16]) {
+      const {tree,...result}=await run({colorProfile,bits,createStars:true,applyAdjustments:true,protectedSaturation:true,colourNoiseReduction:true,lightnessLift:0.1,tuning:{maskBlur:2}});
+      const doc=app.activeDocument;
+      try {
+        const layers=Object.fromEntries(Array.from(doc.layers).filter(l=>["sii","ha","oiii"].includes(l.name)).map(l=>[l.name,l]));
+        const options={...layers,threeChannels:true,applyAdjustments:true,protectedSaturation:true,lightnessLift:0.1};
+        const history=doc.activeHistoryState.id,cache=await P.loadPreview(options);
+        const raw=P.previewPixels(cache,options), display=P.previewPixels(cache,options,true);
+        const jpeg=await P.renderPreview(cache,options);
+        result.previewReadOnly=history===doc.activeHistoryState.id;
+        result.profilePreserved=doc.colorProfileName===colorProfile && cache.colorProfile===colorProfile;
+        result.displayConverted=colorProfile==="sRGB IEC61966-2.1" ? display.every((v,i)=>v===raw[i]) : display.some((v,i)=>v!==raw[i]);
+        result.pass=result.pass && result.previewReadOnly && result.profilePreserved && result.displayConverted && jpeg.startsWith("data:image/jpeg;base64,");
+        results.push(result);
+      } finally { await core.executeAsModal(()=>doc.closeWithoutSaving(),{commandName:"Close profile test fixture"}); }
+    }
+  }
+  return {pass:results.every(r=>r.pass),results};
+}
+
+module.exports.checkProfileLab=checkProfileLab;
+module.exports.checkProfiles=checkProfiles;

@@ -13,6 +13,7 @@
     .row sp-textfield { flex: 0 0 72px; }
     #outputName { flex: 1; }
     sp-picker { width: 100%; }
+    .picker-label { display: block; margin-top: 8px; }
     .hint { font-size: 11px; color: #999; margin: 4px 0 10px; }
     #status { font-size: 12px; margin-top: 10px; min-height: 1.2em; }
     .actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -26,11 +27,18 @@
 </head>
 <body>
   <h2>Foraxx Palette</h2>
-  <p class="hint">Pick stretched, starless grayscale layers. The plugin builds a group of screened
-     layers that equals the Foraxx palette; the non-linear factors become two layer masks.</p>
+  <p class="hint">Pick stretched, starless grayscale layers and a palette. Foraxx uses editable mixing masks;
+     SHO, HOO, HSO and OHS map the channels directly.</p>
 
-  <sp-checkbox id="threeChannels" checked>Three channels (SII + Ha + OIII)</sp-checkbox>
-  <sp-checkbox id="createStars">Also build a stars stack from star layers</sp-checkbox>
+  <div><sp-checkbox id="threeChannels" checked>Three channels (SII + Ha + OIII)</sp-checkbox></div>
+  <div><sp-checkbox id="createStars">Also build a stars stack from star layers</sp-checkbox></div>
+  <div><sp-checkbox id="combineStars" checked>Screen stars onto the nebula</sp-checkbox></div>
+  <sp-label class="picker-label">Palette</sp-label>
+  <div><sp-picker id="palette"><sp-menu slot="options">
+    <sp-menu-item value="Foraxx" selected>Foraxx (dynamic)</sp-menu-item>
+    <sp-menu-item value="SHO">SHO (Hubble)</sp-menu-item><sp-menu-item value="HOO">HOO</sp-menu-item>
+    <sp-menu-item value="HSO">HSO</sp-menu-item><sp-menu-item value="OHS">OHS</sp-menu-item>
+  </sp-menu></sp-picker></div>
 
   <div class="row"><div class="channel"><sp-label>SII</sp-label><sp-picker id="sii"><sp-menu slot="options"></sp-menu></sp-picker></div>
     <sp-textfield id="siiGain" value="1.0" type="number"><sp-label slot="label">gain</sp-label></sp-textfield></div>
@@ -49,13 +57,26 @@
 
   <div class="tuning">
     <div id="preset">Original Foraxx</div>
+    <div><sp-checkbox id="livePreview" checked>Live preview</sp-checkbox></div>
+    <sp-label class="picker-label">Preview</sp-label>
+    <div><sp-picker id="previewTarget"><sp-menu slot="options">
+      <sp-menu-item value="result" selected>Result</sp-menu-item><sp-menu-item value="stars">Stars</sp-menu-item>
+      <sp-menu-item value="factor_o">Red mixing mask</sp-menu-item><sp-menu-item value="factor_ho">Green mixing mask</sp-menu-item>
+      <sp-menu-item value="ratio_OIII">OIII ratio mask</sp-menu-item><sp-menu-item value="ratio_SII">SII ratio mask</sp-menu-item>
+      <sp-menu-item value="saturation_mask">Protected saturation mask</sp-menu-item>
+    </sp-menu></sp-picker></div>
     <img id="previewImage" alt="Foraxx palette preview">
+    <sp-slider id="previewZoom" min="1" max="32" step="1" value="1"><sp-label slot="label">Preview zoom · 1 shows full image</sp-label></sp-slider>
+    <div class="tuning-row">
+      <sp-slider id="previewX" min="0" max="100" step="1" value="50"><sp-label slot="label">Pan left / right</sp-label></sp-slider>
+      <sp-slider id="previewY" min="0" max="100" step="1" value="50"><sp-label slot="label">Pan up / down</sp-label></sp-slider>
+    </div>
     <div id="previewStatus">Select source layers, then load a preview.</div>
     <div class="actions">
       <sp-button id="preview" variant="secondary">Load preview</sp-button>
       <sp-button id="reset" variant="secondary">Original Foraxx</sp-button>
     </div>
-    <p class="hint">Preview updates as you adjust. It uses sampled sources; fine detail may differ.</p>
+    <p class="hint">Live preview updates as you adjust; Load preview also refreshes it manually. Sampled fine detail may differ.</p>
     <div class="tuning-row">
       <sp-slider id="redBias" min="-2" max="2" step="0.1" value="0"><sp-label slot="label">Red bias → SII</sp-label></sp-slider>
       <sp-slider id="redContrast" min="0.25" max="4" step="0.05" value="1"><sp-label slot="label">Red contrast</sp-label></sp-slider>
@@ -65,15 +86,38 @@
       <sp-slider id="greenContrast" min="0.25" max="4" step="0.05" value="1"><sp-label slot="label">Green contrast</sp-label></sp-slider>
     </div>
     <div class="tuning-row">
+      <sp-slider id="haMidtone" min="0.05" max="0.95" step="0.01" value="0.5"><sp-label slot="label">Ha midtones</sp-label></sp-slider>
+      <sp-slider id="siiMidtone" min="0.05" max="0.95" step="0.01" value="0.5"><sp-label slot="label">SII midtones</sp-label></sp-slider>
+    </div>
+    <div class="tuning-row">
       <sp-slider id="oiiiMidtone" min="0.05" max="0.95" step="0.01" value="0.5"><sp-label slot="label">OIII midtones · lower lifts</sp-label></sp-slider>
     </div>
-    <p class="hint">Bias 0, contrast 1 and midtones 0.5 preserve the original palette. Changes apply to the next build.</p>
+    <div class="tuning-row">
+      <sp-slider id="maskBlur" min="0" max="25" step="0.1" value="0"><sp-label slot="label">Mask blur · sigma (px)</sp-label></sp-slider>
+    </div>
+    <p class="hint">Blur smooths Ha/OIII only for the masks; color detail stays sharp. 0 is off; try 2 px for noisy data.</p>
+    <p class="hint">Bias 0, contrast 1, midtones 0.5 and blur 0 preserve the original palette. Changes apply to the next build.</p>
+    <div class="actions"><sp-button id="extrasToggle" variant="secondary">Show color finishing and masks</sp-button></div>
+    <div id="extras" style="display: none;">
+      <div><sp-checkbox id="createFactorImages">Keep reusable mixing masks</sp-checkbox></div>
+      <div><sp-checkbox id="createRatioMasks">Create channel-ratio masks</sp-checkbox></div>
+      <sp-slider id="ratioThreshold" min="0" max="0.5" step="0.005" value="0.05"><sp-label slot="label">Ratio background threshold</sp-label></sp-slider>
+      <div><sp-checkbox id="colourNoiseReduction">Reduce color noise (Lab chroma)</sp-checkbox></div>
+      <sp-slider id="colourNoiseLayers" min="1" max="4" step="1" value="2"><sp-label slot="label">Noise scales to remove</sp-label></sp-slider>
+      <div><sp-checkbox id="applyAdjustments">FPU standard color adjustments</sp-checkbox></div>
+      <div><sp-checkbox id="protectBackground">Protect background from standard saturation</sp-checkbox></div>
+      <div><sp-checkbox id="protectedSaturation">Protected saturation boost</sp-checkbox></div>
+      <sp-slider id="saturationAmount" min="0" max="1" step="0.01" value="0.25"><sp-label slot="label">Saturation boost</sp-label></sp-slider>
+      <sp-slider id="saturationBackground" min="0" max="0.5" step="0.005" value="0.1"><sp-label slot="label">Background L*</sp-label></sp-slider>
+      <sp-slider id="lightnessLift" min="-0.3" max="0.3" step="0.005" value="0"><sp-label slot="label">L* lift</sp-label></sp-slider>
+      <p class="hint">Color finishing supports sRGB, Adobe RGB (1998), Display P3 / image P3 and ProPhoto RGB. Use 16 bits for wide gamut. The panel preview is sRGB; output keeps the document profile. Finishing creates a snapshot above the editable raw layers. Hide it to edit the raw stack.</p>
+    </div>
   </div>
 
   <div class="row"><sp-textfield id="outputName" value="Foraxx"><sp-label slot="label">Group name</sp-label></sp-textfield></div>
 
   <div class="actions">
-    <sp-button id="run" variant="cta">Build Foraxx layers</sp-button>
+    <sp-button id="run" variant="cta">Build palette layers</sp-button>
   </div>
   <div id="status"></div>
   <script src="src/main.js"></script>
