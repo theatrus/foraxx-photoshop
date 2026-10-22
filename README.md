@@ -68,7 +68,7 @@ Download the `.ccx` installer from [GitHub Releases](https://github.com/theatrus
 Double-click it to install through Creative Cloud Desktop, accepting the
 outside-Marketplace prompt. Developer Mode is not needed for packaged installs.
 Download the `.ccx` asset, not GitHub's automatically generated source archive.
-The first release is a beta validated on Windows with Photoshop 27.10;
+This beta is validated on Windows with Photoshop 27.10;
 macOS and the declared minimum Photoshop 24.4 remain untested.
 
 1. Open an RGB document (8 or 16 bit) with the stretched, starless
@@ -78,7 +78,7 @@ macOS and the declared minimum Photoshop 24.4 remain untested.
 3. Click **Load preview**, then adjust gains and palette sliders. The preview
    updates as you adjust them. Click **Original Foraxx** to reset all gains
    and palette controls to the original formula.
-4. Click **Build Foraxx layers**. The new group appears at the top. Hide the
+4. Click **Build palette**. The new group appears at the top. Hide the
    source layers or leave them.
 
 Choose **Foraxx**, **SHO**, **HOO**, **HSO**, or **OHS** in the Palette menu.
@@ -226,7 +226,7 @@ npm run package -- /path/to/@adobe/uxp-devtools-cli/src/uxp.js
 ```
 
 This stages the runtime files, calls Adobe's `uxp plugin package`, and writes
-`dist/foraxx-palette-0.1.0.ccx` plus `dist/SHA256SUMS.txt`. A local installation
+`dist/foraxx-palette-0.2.0.ccx` plus `dist/SHA256SUMS.txt`. A local installation
 of `@adobe/uxp-devtools-cli` is also detected without the path argument.
 GitHub releases use the independent plugin ID `us.theatr.foraxx`; keep it
 stable across updates. Any future Marketplace build needs its own portal ID.
